@@ -42,6 +42,22 @@ function decodeEntities(s: string): string {
 const LIGHTPANDA_DIR = join(homedir(), ".local", "bin");
 const LIGHTPANDA_BIN = join(LIGHTPANDA_DIR, "lightpanda");
 
+async function jinaFetch(url: string, signal?: AbortSignal): Promise<string> {
+	const jinaUrl = `https://r.jina.ai/${url}`;
+	const res = await fetch(jinaUrl, {
+		signal: AbortSignal.any(
+			[signal, AbortSignal.timeout(20_000)].filter(Boolean) as AbortSignal[],
+		),
+		headers: { Accept: "text/markdown" },
+	});
+	if (!res.ok) throw new Error(`Jina HTTP ${res.status}`);
+	const md = await res.text();
+	// Strip Jina header block (lines starting with Title:/URL Source:/etc.)
+	return md.replace(/^(?:Title|URL Source|Published Time|Warning|Markdown Content):[^
+]*
+?/gm, "").trim();
+}
+
 async function curlFetch(url: string, signal?: AbortSignal): Promise<string> {
 	return new Promise((resolve, reject) => {
 		const args = [
@@ -254,8 +270,21 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
-			// Final fallback: if everything returned empty, try curl
-			// (sites like Amazon block Node.js fetch but allow curl TLS fingerprint)
+			// Tier 3: Jina Reader — server-side JS rendering + markdown, zero-config
+			// Works on Newegg, most retail, and medium JS sites. Blocked by Cloudflare-heavy sites.
+			if (text.trim().length === 0) {
+				try {
+					const jinaRaw = await jinaFetch(params.url, signal);
+					if (jinaRaw.length > 0) {
+						text = jinaRaw;
+						usedLightpanda = false;
+					}
+				} catch (_err) {
+					// Jina failed
+				}
+			}
+
+			// Tier 4: curl — different TLS fingerprint for sites that block everything else
 			if (text.trim().length === 0) {
 				try {
 					const curlRaw = await curlFetch(params.url, signal);

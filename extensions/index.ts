@@ -42,6 +42,31 @@ function decodeEntities(s: string): string {
 const LIGHTPANDA_DIR = join(homedir(), ".local", "bin");
 const LIGHTPANDA_BIN = join(LIGHTPANDA_DIR, "lightpanda");
 
+async function cloudscraperFetch(url: string, signal?: AbortSignal): Promise<string> {
+	const script = `
+import cloudscraper, sys
+try:
+    s = cloudscraper.create_scraper()
+    r = s.get("${url.replace(/"/g, '\\"')}", timeout=15)
+    sys.stdout.write(r.text)
+except Exception as e:
+    sys.stderr.write(str(e))
+    sys.exit(1)
+`;
+	return new Promise((resolve, reject) => {
+		const proc = execFile("python3", ["-c", script], {
+			timeout: 20_000,
+			maxBuffer: 4 * 1024 * 1024,
+		}, (err, stdout, stderr) => {
+			if (err) return reject(err);
+			resolve(stdout || "");
+		});
+		if (signal) {
+			signal.addEventListener("abort", () => proc.kill(), { once: true });
+		}
+	});
+}
+
 async function jinaFetch(url: string, signal?: AbortSignal): Promise<string> {
 	const jinaUrl = `https://r.jina.ai/${url}`;
 	const res = await fetch(jinaUrl, {
@@ -270,7 +295,21 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
-			// Tier 3: Jina Reader — server-side JS rendering + markdown, zero-config
+			// Tier 3: cloudscraper — Python requests with TLS-fingerprint evasion.
+			// Handles Amazon, Walmart, and other bot-blocking retail sites. ~2-5s.
+			if (text.trim().length < 500) {
+				try {
+					const csRaw = await cloudscraperFetch(params.url, signal);
+					if (csRaw.length > 0) {
+						text = htmlToText(csRaw);
+						usedLightpanda = false;
+					}
+				} catch (_err) {
+					// cloudscraper not installed or failed
+				}
+			}
+
+			// Tier 4: Jina Reader — server-side JS rendering + markdown, zero-config
 			// Works on Newegg, most retail, and medium JS sites. Blocked by Cloudflare-heavy sites.
 			if (text.trim().length === 0) {
 				try {
@@ -284,7 +323,7 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
-			// Tier 4: curl — different TLS fingerprint for sites that block everything else
+			// Tier 5: curl — different TLS fingerprint for sites that block everything else
 			if (text.trim().length === 0) {
 				try {
 					const curlRaw = await curlFetch(params.url, signal);

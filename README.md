@@ -28,25 +28,31 @@ curl -fsSL https://lightpanda.io/install.sh | bash
 ### 2. SearXNG (one command)
 
 ```bash
-cd $(dirname $(pi list 2>/dev/null | grep pi-web-tools | awk '{print $NF}'))
+cd $(pi list 2>/dev/null | grep pi-web-tools | awk '{print $NF}')
 docker compose up -d
 ```
 
-This starts SearXNG on `http://localhost:8888` with a default config. To customize engines (Brave, Startpage, Mojeek, etc.), edit `./searxng/settings.yml` and restart with `docker compose restart`.
+This starts SearXNG on `http://localhost:8888` with a default config.
 
-Without Docker, install SearXNG directly: https://docs.searxng.org/admin/installation.html
-
-Override the URL with an env var:
+### 3. cloudscraper (optional, for retail sites)
 
 ```bash
-export SEARXNG_URL=http://your-host:8080
+pip install cloudscraper --break-system-packages
 ```
+
+Handles Amazon, Walmart, and other bot-blocking retail sites. Falls back gracefully if not installed.
 
 ## How `fetch_content` works
 
-1. **Plain `fetch()` first** — fast, reliable, works for ~90% of pages
-2. **SPA detection** — checks for empty body, `<div id="root">` shells, or tiny script-only pages
-3. **Lightpanda fallback** — renders JavaScript, waits 12s for hydration, retries up to 10x with Cloudflare error detection
+Five-tier fallback chain — each tier only fires if the previous one returned empty or junk:
+
+| Tier | Strategy | Speed | Handles |
+|------|----------|-------|---------|
+| 1 | `fetch()` Node.js + Chrome UA | <1s | 90% of pages |
+| 2 | Lightpanda (10 retries) | 12s | JS SPAs (zread.ai, Next.js apps) |
+| 3 | cloudscraper (Python) | 2-5s | Retail sites (Amazon, Walmart) |
+| 4 | Jina Reader (`r.jina.ai`) | 5s | Medium JS sites, markdown output |
+| 5 | `curl` | 2s | Sites blocking Node.js but not curl |
 
 ## License
 

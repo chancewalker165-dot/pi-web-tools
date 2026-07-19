@@ -1,0 +1,15 @@
+{
+  "name": "@thmoegg/pi-web-tools",
+  "version": "1.0.0",
+  "description": "Web search (SearXNG) + page fetch (fetch + Lightpanda SPA fallback) for pi coding agent",
+  "keywords": ["pi-package"],
+  "author": "",
+  "license": "MIT",
+  "pi": {
+    "extensions": ["./extensions"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  }
+}

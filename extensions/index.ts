@@ -42,6 +42,25 @@ function decodeEntities(s: string): string {
 const LIGHTPANDA_DIR = join(homedir(), ".local", "bin");
 const LIGHTPANDA_BIN = join(LIGHTPANDA_DIR, "lightpanda");
 
+async function curlFetch(url: string, signal?: AbortSignal): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const args = [
+			"-sL", "--max-time", "15",
+			"-H", "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+			"-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+			"-H", "Accept-Language: en-US,en;q=0.5",
+			url,
+		];
+		const proc = execFile("curl", args, { timeout: 20_000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout) => {
+			if (err) return reject(err);
+			resolve(stdout || "");
+		});
+		if (signal) {
+			signal.addEventListener("abort", () => proc.kill(), { once: true });
+		}
+	});
+}
+
 async function ensureLightpanda(): Promise<string> {
 	try {
 		await access(LIGHTPANDA_BIN);
@@ -226,10 +245,26 @@ export default function (pi: ExtensionAPI) {
 			if (isLikelySPA(raw, text)) {
 				try {
 					const lpRaw = await runLightpanda(params.url);
-					text = htmlToText(lpRaw);
-					usedLightpanda = true;
+					if (lpRaw.length > 0) {
+						text = htmlToText(lpRaw);
+						usedLightpanda = true;
+					}
 				} catch (_err) {
-					// Lightpanda fallback failed — return empty result
+					// Lightpanda failed — keep the original fetch result
+				}
+			}
+
+			// Final fallback: if everything returned empty, try curl
+			// (sites like Amazon block Node.js fetch but allow curl TLS fingerprint)
+			if (text.trim().length === 0) {
+				try {
+					const curlRaw = await curlFetch(params.url, signal);
+					if (curlRaw.length > 0) {
+						text = htmlToText(curlRaw);
+						usedLightpanda = false;
+					}
+				} catch (_err) {
+					// all fallbacks exhausted
 				}
 			}
 

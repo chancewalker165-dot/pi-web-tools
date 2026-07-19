@@ -1,0 +1,4 @@
+node_modules/
+searxng/limiter.toml
+searxng/uwsgi.ini
+*.log

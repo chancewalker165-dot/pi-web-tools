@@ -1,15 +1,19 @@
 /**
- * local-web — SearXNG web_search + fetch_content
+ * pi-web-tools — SearXNG web_search + fetch_content
  *
- * web_search: queries local SearXNG at localhost:8080 (format=json).
+ * web_search: queries local SearXNG instance (format=json).
  * fetch_content: plain HTTP fetch of a URL, HTML stripped to text.
- * Extraction of JS-heavy pages is left to the lightpanda package.
+ *   Falls back to Lightpanda for JS-heavy SPAs.
+ *
+ * Prerequisites are auto-detected. See README for setup.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { execFile } from "node:child_process";
 import { homedir } from "node:os";
+import { access, mkdir, chmod } from "node:fs/promises";
+import { join } from "node:path";
 
 const SEARXNG_URL = process.env.SEARXNG_URL ?? "http://localhost:8888";
 const FETCH_TIMEOUT_MS = 15_000;
@@ -35,8 +39,46 @@ function decodeEntities(s: string): string {
 		.replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)));
 }
 
-function runLightpanda(url: string): Promise<string> {
-	const binary = `${homedir()}/.local/bin/lightpanda`;
+const LIGHTPANDA_DIR = join(homedir(), ".local", "bin");
+const LIGHTPANDA_BIN = join(LIGHTPANDA_DIR, "lightpanda");
+
+async function ensureLightpanda(): Promise<string> {
+	try {
+		await access(LIGHTPANDA_BIN);
+		return LIGHTPANDA_BIN;
+	} catch {
+		// Auto-install
+	}
+
+	const platform = process.platform;
+	const arch = process.arch === "x64" ? "amd64" : process.arch;
+	const ext = platform === "win32" ? ".exe" : "";
+	const tag = "nightly"; // latest stable: use a version tag
+	const filename = `lightpanda-${platform}-${arch}${ext}`;
+	const url = `https://github.com/lightpanda-io/browser/releases/download/${tag}/${filename}`;
+
+	await mkdir(LIGHTPANDA_DIR, { recursive: true });
+	const dest = LIGHTPANDA_BIN;
+
+	try {
+		const res = await fetch(url, { redirect: "follow" });
+		if (!res.ok) throw new Error(`HTTP ${res.status}`);
+		const buf = Buffer.from(await res.arrayBuffer());
+		await require("node:fs/promises").writeFile(dest, buf);
+		await chmod(dest, 0o755);
+		return dest;
+	} catch (e) {
+		throw new Error(
+			`Lightpanda not found and auto-install failed. Install manually:\n` +
+			`  curl -fsSL https://lightpanda.io/install.sh | bash\n` +
+			`  or download from https://github.com/lightpanda-io/browser/releases\n` +
+			`  (${(e as Error).message})`,
+		);
+	}
+}
+
+async function runLightpanda(url: string): Promise<string> {
+	const binary = await ensureLightpanda();
 	const maxAttempts = 10;
 	const minContentBytes = 50_000;
 

@@ -1,0 +1,26 @@
+# SearXNG for pi-web-tools
+#
+# Start:  docker compose up -d
+# Stop:   docker compose down
+# Config: ./searxng/settings.yml (engines, rate limits, etc.)
+#
+# The extension uses http://localhost:8888 by default.
+# Override with SEARXNG_URL env var.
+
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8888/
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    restart: unless-stopped

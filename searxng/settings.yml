@@ -1,0 +1,22 @@
+# SearXNG settings — customize your search engines here
+# Docs: https://docs.searxng.org/admin/settings/
+
+use_default_settings: true
+
+search:
+  formats:
+    - html
+    - json
+
+server:
+  secret_key: "change-me-to-a-random-string"
+  bind_address: "0.0.0.0"
+  limiter: false
+  image_proxy: true
+
+# Uncomment and add API keys for better results:
+# engines:
+#   - name: brave
+#     api_key: "your-brave-api-key"
+#   - name: google
+#     api_key: "your-google-api-key"
